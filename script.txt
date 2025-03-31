@@ -1,0 +1,15 @@
+mandelbrot_sequential.exe 500 500
+mandelbrot_sequential.exe 1000 1000
+mandelbrot_sequential.exe 2000 2000
+mandelbrot_sequential.exe 2500 2500
+
+
+mpiexec -n 4 mandelbrot_mpi.exe 500 500
+mpiexec -n 4 mandelbrot_mpi.exe 1000 1000
+mpiexec -n 4 mandelbrot_mpi.exe 2000 2000
+mpiexec -n 4 mandelbrot_mpi.exe 2500 2500
+
+mpiexec -n 8 mandelbrot_mpi.exe 500 500
+mpiexec -n 8 mandelbrot_mpi.exe 1000 1000
+mpiexec -n 8 mandelbrot_mpi.exe 2000 2000
+mpiexec -n 8 mandelbrot_mpi.exe 2500 2500
