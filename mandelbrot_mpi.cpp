@@ -2,7 +2,6 @@
 #include <vector>
 #include <complex>
 #include <fstream>
-#include <chrono>
 #include <mpi.h>
 
 using namespace std;
@@ -68,57 +67,56 @@ int main(int argc, char** argv) {
     const double power = 2.0;
 
     vector<int> global_image(width * height);
-    vector<int> local_image;
-
-    int rows_per_process = height / size;
-    int remaining_rows = height % size;
-
-    int start_row = rank * rows_per_process;
-    int end_row = start_row + rows_per_process;
-    if (rank == size - 1) {
-        end_row += remaining_rows;
-    }
-
-    int local_height = end_row - start_row;
-    local_image.resize(width * local_height);
-
     double start_time = MPI_Wtime();
 
-    for (int y = 0; y < local_height; ++y) {
-        int global_y = start_row + y;
-        for (int x = 0; x < width; ++x) {
-            double re = xmin + (double(x) / width) * (xmax - xmin);
-            double im = ymin + (double(global_y) / height * (ymax - ymin));
-            complex<double> c(re, im);
-            local_image[y * width + x] = mandelbrot(c, power, iterations);
-        }
-    }
-
     if (rank == 0) {
-        copy(local_image.begin(), local_image.end(), global_image.begin());
         for (int p = 1; p < size; ++p) {
-            int p_start_row = p * rows_per_process;
-            int p_end_row = p_start_row + rows_per_process;
-            if (p == size - 1) {
-                p_end_row += remaining_rows;
-            }
-            int p_height = p_end_row - p_start_row;
-            vector<int> temp_buffer(width * p_height);
-            MPI_Recv(temp_buffer.data(), width * p_height, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            copy(temp_buffer.begin(), temp_buffer.end(), global_image.begin() + p_start_row * width);
+            int rows_per_process = height / (size - 1);
+            int start_row = (p - 1) * rows_per_process;
+            int end_row = (p == size - 1) ? height : start_row + rows_per_process;
+            int num_rows = end_row - start_row;
+
+            MPI_Send(&start_row, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
+            MPI_Send(&end_row, 1, MPI_INT, p, 0, MPI_COMM_WORLD);
         }
-    } else {
-        MPI_Send(local_image.data(), width * local_height, MPI_INT, 0, 0, MPI_COMM_WORLD);
-    }
 
-    double end_time = MPI_Wtime();
-    double elapsed_time = end_time - start_time;
+        for (int p = 1; p < size; ++p) {
+            int rows_per_process = height / (size - 1);
+            int start_row = (p - 1) * rows_per_process;
+            int end_row = (p == size - 1) ? height : start_row + rows_per_process;
+            int num_rows = end_row - start_row;
 
-    if (rank == 0) {
+            vector<int> buffer(width * num_rows);
+            MPI_Recv(buffer.data(), width * num_rows, MPI_INT, p, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            copy(buffer.begin(), buffer.end(), global_image.begin() + start_row * width);
+        }
+
+        double end_time = MPI_Wtime();
+        double elapsed_time = end_time - start_time;
+
         cout << "Calculated Mandelbrot set (" << width << "x" << height << ")" << endl;
         cout << "Calculation completed in " << elapsed_time << " seconds." << endl;
         cout << "Using " << size << " processes" << endl;
-        write_output(global_image, elapsed_time, width, height, xmin, ymin, xmax, ymax, iterations, power, size);
+
+        write_output(global_image, elapsed_time, width, height, xmin, ymin, xmax, ymax, iterations, power, size - 1);
+    } else {
+        int start_row, end_row;
+        MPI_Recv(&start_row, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&end_row, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        int local_height = end_row - start_row;
+
+        vector<int> local_image(width * local_height);
+        for (int y = 0; y < local_height; ++y) {
+            int global_y = start_row + y;
+            for (int x = 0; x < width; ++x) {
+                double re = xmin + (double(x) / width) * (xmax - xmin);
+                double im = ymin + (double(global_y) / height) * (ymax - ymin);
+                complex<double> c(re, im);
+                local_image[y * width + x] = mandelbrot(c, power, iterations);
+            }
+        }
+
+        MPI_Send(local_image.data(), width * local_height, MPI_INT, 0, 0, MPI_COMM_WORLD);
     }
 
     MPI_Finalize();
